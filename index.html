@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Cloud Attendance Tracker</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 1rem;
+      margin: 0;
+      background: #f4f6f8;
+    }
+  
+    h1 {
+      text-align: center;
+      color: #2a2a2a;
+    }
+  
+    input, button {
+      padding: 10px;
+      margin: 5px;
+      width: 100%;
+      max-width: 300px;
+      display: block;
+      margin-left: auto;
+      margin-right: auto;
+      border-radius: 5px;
+      border: 1px solid #ccc;
+    }
+  
+    button {
+      background-color: #0066ff;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+  
+    button:hover {
+      background-color: #0052cc;
+    }
+  
+    .hidden {
+      display: none;
+    }
+  
+    .teacher-card {
+      background: white;
+      margin: 10px auto;
+      padding: 15px;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+      max-width: 400px;
+    }
+  
+    .teacher-card h3 {
+      margin: 0 0 10px;
+    }
+  
+    .teacher-buttons {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+  
+    .teacher-buttons button {
+      flex: 1;
+      min-width: 100px;
+    }
+  
+    @media (max-width: 600px) {
+      input, button {
+        width: 90%;
+      }
+  
+      .teacher-card {
+        width: 95%;
+      }
+    }
+  </style>
+</head>
+<body>
+
+<h1>Cloud Attendance Register</h1>
+
+<div id="loginDiv">
+  <input type="email" id="email" placeholder="Email">
+  <input type="password" id="password" placeholder="Password">
+  <button onclick="login()">Login</button>
+  <button onclick="signup()">Sign Up</button>
+</div>
+
+<div id="mainApp" class="hidden">
+  <p>Welcome, <span id="userEmail"></span> <button onclick="logout()">Logout</button></p>
+
+  <input type="text" id="teacherName" placeholder="Enter Teacher Name">
+  <button onclick="addTeacher()">Add Teacher</button>
+
+  <div id="teacherContainer"></div>
+</div>
+
+<script>
+  const firebaseConfig = {
+    apiKey: "AIzaSyD9SyfI4hRrAW9fxZp-SdPozWg6MJUJHKQ",
+    authDomain: "attendance-de5ac.firebaseapp.com",
+    projectId: "attendance-de5ac",
+    storageBucket: "attendance-de5ac.firebasestorage.app",
+    messagingSenderId: "406584587556",
+    appId: "1:406584587556:web:56bae02815aeaca2e62fb1",
+    measurementId: "G-1KMCT605E6"
+  };
+
+  firebase.initializeApp(firebaseConfig);
+  const auth = firebase.auth();
+  const db = firebase.firestore();
+
+  const loginDiv = document.getElementById('loginDiv');
+  const mainApp = document.getElementById('mainApp');
+  const teacherContainer = document.getElementById('teacherContainer');
+  const userEmail = document.getElementById('userEmail');
+
+  function login() {
+    const email = document.getElementById('email').value;
+    const pass = document.getElementById('password').value;
+    auth.signInWithEmailAndPassword(email, pass)
+      .catch(err => alert(err.message));
+  }
+
+  function signup() {
+    const email = document.getElementById('email').value;
+    const pass = document.getElementById('password').value;
+    auth.createUserWithEmailAndPassword(email, pass)
+      .catch(err => alert(err.message));
+  }
+
+  function logout() {
+    auth.signOut();
+  }
+
+  auth.onAuthStateChanged(user => {
+    if (user) {
+      loginDiv.classList.add('hidden');
+      mainApp.classList.remove('hidden');
+      userEmail.textContent = user.email;
+      loadTeachers(user.uid);
+    } else {
+      loginDiv.classList.remove('hidden');
+      mainApp.classList.add('hidden');
+    }
+  });
+
+  function addTeacher() {
+    const name = document.getElementById('teacherName').value.trim();
+    const uid = auth.currentUser.uid;
+    if (!name) return;
+
+    db.collection('users').doc(uid).collection('teachers').doc(name).set({
+      daysTaught: 0,
+      log: []
+    });
+    document.getElementById('teacherName').value = '';
+    loadTeachers(uid);
+  }
+
+  function markPresent(name) {
+    const uid = auth.currentUser.uid;
+    const ref = db.collection('users').doc(uid).collection('teachers').doc(name);
+    ref.get().then(doc => {
+      const data = doc.data();
+      const now = new Date();
+      const newLog = data.log || [];
+      newLog.push(now.toLocaleString());
+      ref.update({
+        daysTaught: data.daysTaught + 1,
+        log: newLog
+      }).then(() => loadTeachers(uid));
+    });
+  }
+
+  function undoDay(name) {
+    const uid = auth.currentUser.uid;
+    const ref = db.collection('users').doc(uid).collection('teachers').doc(name);
+    ref.get().then(doc => {
+      const data = doc.data();
+      const newLog = data.log || [];
+      newLog.pop();
+      ref.update({
+        daysTaught: Math.max(data.daysTaught - 1, 0),
+        log: newLog
+      }).then(() => loadTeachers(uid));
+    });
+  }
+
+  function deleteTeacher(name) {
+    const uid = auth.currentUser.uid;
+    if (confirm(`Are you sure you want to delete ${name}?`)) {
+      db.collection('users').doc(uid).collection('teachers').doc(name).delete()
+        .then(() => loadTeachers(uid));
+    }
+  }
+
+  function loadTeachers(uid) {
+    teacherContainer.innerHTML = '';
+    db.collection('users').doc(uid).collection('teachers').get()
+      .then(snapshot => {
+        snapshot.forEach(doc => {
+          const data = doc.data();
+          const div = document.createElement('div');
+          div.className = 'teacher-card';
+          const color = '#' + Math.floor(Math.random()*16777215).toString(16);
+          div.style.borderLeft = `10px solid ${color}`;
+          div.innerHTML = `
+            <h3>${doc.id}</h3>
+            <p><strong>Days Taught:</strong> ${data.daysTaught}</p>
+            <button onclick="markPresent('${doc.id}')">Present</button>
+            <button onclick="undoDay('${doc.id}')">Undo</button>
+            <button onclick="deleteTeacher('${doc.id}')">Delete</button>
+            <details><summary>View Log</summary>
+              ${data.log && data.log.length > 0 ? data.log.map(entry => `<div class='log-entry'>${entry}</div>`).join('') : '<i>No entries yet</i>'}
+            </details>
+          `;
+          teacherContainer.appendChild(div);
+        });
+      });
+  }
+</script>
+</body>
+</html>
